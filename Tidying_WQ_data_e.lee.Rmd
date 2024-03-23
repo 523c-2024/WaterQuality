@@ -444,8 +444,6 @@ conc.wide <- conc.annual %>%
 ggplot(conc.wide,aes(x=Bicarbonate,y=`Mg+Ca`,color=SiteID)) + 
   geom_point() + 
   geom_abline(slope=1,intercept=0)
-
-
 ```
 
 ## Model changes
@@ -581,9 +579,12 @@ generally July-Oct.
 sc_annual_mean_lowf <- sc %>%
   filter(month(Date) %in% c(7, 8, 9, 10)) %>%
   mutate(year = year(Date)) %>%
-  group_by(site_no, year, SpecCond) %>%
+  #adjusting date column to match other date column titles
+  mutate(date = Date) %>%
+  select(-Date) %>%
+  mutate(SiteID = paste0("USGS-", site_no)) %>%
+  group_by(SiteID, date, year, SpecCond) %>%
   summarise(annual_mean = mean(SpecCond, na.rm = TRUE))
-
 ```
 
 ### Using the `map` code from above test if their are trends
@@ -623,12 +624,22 @@ are significant for all four sites.\
 
 ```{r}
 # Think about if you want a full join, inner join, left join, etc...
+
+sc_ionc_combined <- sc_annual_mean_lowf %>%
+  left_join(conc.daily %>% select (date, SiteID, parameter, conc), by = c("date", "SiteID")) %>%
+  select(-annual_mean) %>%
+  filter(!is.na(conc))
 ```
 
 ### Plot the correlation with sc on the x axis and individual ions on the y
 
 ```{r}
-
+##don't think this is right...
+ggplot(sc_ionc_combined, aes(x = SpecCond, y = conc)) +
+  geom_point() +  # Add points for each data point
+  labs(x = "SpecCond", y = "Concentration", title = "SpecCond vs. Concentration") +
+  theme_minimal() +
+  facet_wrap("parameter")
 ```
 
 ### Use the `map` and modelling code to test for correlation with `lm`
