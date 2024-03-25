@@ -671,6 +671,8 @@ conc.models %>%
 Answer: All the ions except bicarbonate are correlated with specific
 conductivity.
 
+**##need to explain this more!**
+
 ## Q3) How does discharge control these relationships?
 
 ### Free play.
@@ -700,4 +702,6 @@ Q <- readNWISdv(siteNumbers = site_nos,
   #adjusting date column to match other date column titles
   mutate(date = Date) %>%
   select(SiteID, date, year, Flow)
+
+#create combined dataframe with daily specCond, Q and conc. then see how they relate?
 ```
