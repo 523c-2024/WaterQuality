@@ -478,8 +478,6 @@ time.lm.models <- function(x){
 
 conc.models <- conc.nest %>%
   mutate(mods=map(data,time.lm.models))
-
-
 ```
 
 Now we have an individual time-series analysis model for each site and
@@ -495,8 +493,6 @@ conc.models %>%
   kable(.,'html') %>%
   kable_styling() %>%
   scroll_box(width='600px',height='500px')
-
-
 ```
 
 Cool! Lots of these constituents have significant trends. Many of them
@@ -561,7 +557,8 @@ sc <- readNWISdv(siteNumbers = site_nos,
                  parameterCd = sc_code,
                  startDate = '2007-01-01',
                  endDate = '2024-03-20') %>%
-  renameNWISColumns()
+  renameNWISColumns() %>%
+  mutate(sideID = site)
 
 
 ```
@@ -575,16 +572,19 @@ generally July-Oct.
 ```{r}
 
 #Group_by, filter, and summarize will be key here. 
-
 sc_annual_mean_lowf <- sc %>%
   filter(month(Date) %in% c(7, 8, 9, 10)) %>%
   mutate(year = year(Date)) %>%
   #adjusting date column to match other date column titles
   mutate(date = Date) %>%
-  select(-Date) %>%
   mutate(SiteID = paste0("USGS-", site_no)) %>%
-  group_by(SiteID, date, year, SpecCond) %>%
-  summarise(annual_mean = mean(SpecCond, na.rm = TRUE))
+  select(-c(Date, site_no, agency_cd)) %>%
+  group_by(SiteID, year, SpecCond)
+
+year_stats <- sc_annual_mean_lowf %>%
+  group_by(SiteID, year) %>%
+  summarize(mean = mean(SpecCond)) %>%
+  nest()
 ```
 
 ### Using the `map` code from above test if their are trends
@@ -594,29 +594,31 @@ non-parametric test for trends in data from the `trend` package, which
 you will need to install and load
 
 ```{r}
-##NOT SURE IF I DID THIS RIGHT? GOT P-values!
-#install.packages("trend")
 library(trend)
+#this will run the test for all models
+sens_slope <- sens.slope(x = year_stats$mean, conf.leve = 0.95)
 
-test_sc_trend <- function(sc_annual_mean_lowf) {
-  test_result <- sens.slope(sc_annual_mean_lowf$SpecCond)
-  p_value <- test_result$p.value
-  return(p_value)
+#this will create a specific model for each site
+sens<- function(df){
+  model <- sens.slope(x = df$mean) %>%
+    tidy()
 }
 
-#applying the trend test function to each group
-sc_trend_results <- sc_annual_mean_lowf %>%
-  group_by(site_no) %>%
-  summarise(sc_test_result = test_sc_trend(.))
+model_results <- year_stats %>%
+  mutate(model = map(data, sens)) %>%
+  unnest(cols = model)
 
-# View the trend test results
-print(sc_trend_results)
-
-##interpreting results- A small p-value suggests strong evidence against the null hypothesis and indicates that a trend may exist in the data.
+##Need to figure out how to plot these to see the pattern... 
 ```
 
-Answer: There appears to be trends for all four sites, as the p-values
-are significant for all four sites.\
+```{r}
+#sams example
+# want to get annual mean for each 4 site of specCond. - want water year, site and mean
+# want to determine if there is a trend in the annual means
+## if you want to get p-value across multiple sites, you need to use map
+```
+
+Answer: \
 
 ## Q2) 2) What is the correlation between specific conductivity and individual ion concentration?
 
@@ -624,31 +626,50 @@ are significant for all four sites.\
 
 ```{r}
 # Think about if you want a full join, inner join, left join, etc...
-
 sc_ionc_combined <- sc_annual_mean_lowf %>%
-  left_join(conc.daily %>% select (date, SiteID, parameter, conc), by = c("date", "SiteID")) %>%
-  select(-annual_mean) %>%
-  filter(!is.na(conc))
+  inner_join(conc.daily %>% select (date, SiteID, parameter, conc), by = c("date", "SiteID")) %>%
+  group_by(SiteID, year)
 ```
 
 ### Plot the correlation with sc on the x axis and individual ions on the y
 
 ```{r}
-##don't think this is right...
 ggplot(sc_ionc_combined, aes(x = SpecCond, y = conc)) +
   geom_point() +  # Add points for each data point
   labs(x = "SpecCond", y = "Concentration", title = "SpecCond vs. Concentration") +
   theme_minimal() +
-  facet_wrap("parameter")
+  #free the scales to help with the outlier distortion of plots
+  facet_wrap("parameter", scales = "free_y")
 ```
 
 ### Use the `map` and modelling code to test for correlation with `lm`
 
 ```{r}
+specCond.lm.models <- function(x){
+  mod <- lm(conc~SpecCond, data=x)
+}
 
+specCond.lm.results <- sc_ionc_combined %>%
+  group_by(parameter) %>%
+  #nesting this allows me to call "data" in the below mutate
+  nest() %>%
+  mutate(mods= map(data, specCond.lm.models))
+
+#investigating individual time series analyses
+conc.models %>%
+  mutate(mod.glance=map(mods,glance)) %>%
+  unnest(mod.glance) %>% #Unnesting unwraps the nested column. 
+  arrange(desc(adj.r.squared)) %>%
+  select(parameter,SiteID,adj.r.squared,p.value,logLik,AIC) %>%
+  kable(.,'html') %>%
+  kable_styling() %>%
+  scroll_box(width='600px',height='500px')
 ```
 
 ### What Ions are correlated with SC? Why might this be?
+
+Answer: All the ions except bicarbonate are correlated with specific
+conductivity.
 
 ## Q3) How does discharge control these relationships?
 
@@ -661,3 +682,22 @@ between discharge and SC? Does this relationship alter the relationship
 between SC and Ions? Does a model with both SC AND discharge predict
 water quality concentrations better than SC alone? Just try one of these
 approaches and write out why you think this might be happening.
+
+```{r}
+#parameter code for discharge = 00060
+
+q_code = '00060'
+
+Q <- readNWISdv(siteNumbers = site_nos,
+                 parameterCd = q_code,
+                 startDate = '2007-01-01',
+                 endDate = '2024-03-20') %>%
+  renameNWISColumns() %>%
+  mutate(SiteID = paste0("USGS-", site_no)) %>%
+  select(-c(Flow_cd, site_no, agency_cd)) %>%
+  filter(month(Date) %in% c(7, 8, 9, 10)) %>%
+  mutate(year = year(Date)) %>%
+  #adjusting date column to match other date column titles
+  mutate(date = Date) %>%
+  select(SiteID, date, year, Flow)
+```
