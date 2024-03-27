@@ -557,8 +557,7 @@ sc <- readNWISdv(siteNumbers = site_nos,
                  parameterCd = sc_code,
                  startDate = '2007-01-01',
                  endDate = '2024-03-20') %>%
-  renameNWISColumns() %>%
-  mutate(sideID = site)
+  renameNWISColumns()
 ```
 
 ### Summarize the daily data to annual means for lower flow periods (July/Aug/Sept/Oct)
@@ -568,21 +567,19 @@ looking for trends we want to focus on the saltiest times of year,
 generally July-Oct.
 
 ```{r}
-
-#Group_by, filter, and summarize will be key here. 
-sc_annual_mean_lowf <- sc %>%
-  filter(month(Date) %in% c(7, 8, 9, 10)) %>%
-  mutate(year = year(Date)) %>%
-  #adjusting date column to match other date column titles
-  mutate(date = Date) %>%
-  mutate(SiteID = paste0("USGS-", site_no)) %>%
-  select(-c(Date, site_no, agency_cd)) %>%
-  group_by(SiteID, year, SpecCond)
-
-year_stats <- sc_annual_mean_lowf %>%
-  group_by(SiteID, year) %>%
-  summarize(mean = mean(SpecCond)) %>%
-  nest()
+#removed nesting, as it was confusing to me
+sc_annual_mean <- sc %>%
+  #add month columns
+  mutate(month = month(Date),
+         year = year(Date)) %>%
+  #filter to only those summer months
+  filter(month %in% c(7,8,9,10)) %>%
+  #group by sites and years to take site and year averages
+  group_by(site_no, year) %>%
+  # Take the mean, removing NAs and add a count of obs to make sure
+  # our summer annual mean represents a good amount of data
+  summarize(summer_sc = mean(SpecCond,na.rm = T),
+            count = n())
 ```
 
 ### Using the `map` code from above test if their are trends
@@ -593,39 +590,83 @@ you will need to install and load
 
 ```{r}
 library(trend)
-#this will run the test for all models
-sens_slope <- sens.slope(x = year_stats$mean, conf.leve = 0.95)
 
-#this will create a specific model for each site
-sens<- function(df){
-  model <- sens.slope(x = df$mean) %>%
-    tidy()
+#custom sens.slope function
+sens <- function(df){
+  mod <- sens.slope(df$sc_annual_mean)
+  
+    #Extract the things we want
+    #if there is a trend (p.value),
+    # what is the slope? 
+  tibble(slope = mod$estimates,
+         p_value = mod$p.value)
 }
-
-model_results <- year_stats %>%
-  mutate(model = map(data, sens)) %>%
-  unnest(cols = model)
-##Need to figure out how to plot these to see the pattern... 
 ```
 
-```{r}
-#sams example
-# want to get annual mean for each 4 site of specCond. - want water year, site and mean
-# want to determine if there is a trend in the annual means
-## if you want to get p-value across multiple sites, you need to use map
-```
-
-Answer:\
-
-## Q2) 2) What is the correlation between specific conductivity and individual ion concentration?
+Q2) 2) What is the correlation between specific conductivity and
+individual ion concentration?
 
 ### Join `conc.daily` to your specific conductance `sc` data
 
 ```{r}
 # Think about if you want a full join, inner join, left join, etc...
-sc_ionc_combined <- sc_annual_mean_lowf %>%
-  inner_join(conc.daily %>% select (date, SiteID, parameter, conc), by = c("date", "SiteID")) %>%
-  group_by(SiteID, year)
+sc_combined <- sc_annual_mean %>%
+  group_by(site_no) %>%
+  #Bundle the data
+  nest() %>%
+  #Apply the model
+  mutate(mods=map(data,sens)) %>%
+  # Extract model results
+  unnest(cols = mods) %>%
+  #remove data
+  select(-data)
+  #Join back to site names
+  #First need to add sites with USGS - in front
+  mutate(sites = paste0('USGS-', site_no)) %>%
+  inner_join(focus_sites, by = "site_no")
+
+kable(sc_combined)
+```
+
+```{r}
+##Matt's code
+
+my_sens <- function(df){
+  mod <- sens.slope(df$summer_sc)
+  
+    #Extract the things we want
+    #if there is a trend (p.value),
+    # what is the slope? 
+  tibble(slope = mod$estimates,
+         p_value = mod$p.value)
+}
+
+
+sc_results <- sc_summers %>%
+  group_by(site_no) %>%
+  #Bundle the data
+  nest() %>%
+  #Apply the model
+  mutate(mods=map(data,my_sens)) %>%
+  # Extract model results
+  unnest(cols = mods) %>%
+  #remove data
+  select(-data) %>%
+  #Join back to site names
+  #First need to add sites with USGS - in front
+  mutate(sites = paste0('USGS-',site_no)) %>%
+  inner_join(focus_sites)
+kable(sc_results)
+
+sc_results <- sc_annual_mean_lowf %>%
+  group_by(site_no) %>%
+  nest() %>%
+  mutate(mods=map(data,sens)) %>%
+  unnest(cols = mods) %>%
+  select(-data) %>%
+  inner_join (focus_sites) 
+
+kable(sc_results)
 ```
 
 ### Plot the correlation with sc on the x axis and individual ions on the y
