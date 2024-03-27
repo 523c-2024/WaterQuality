@@ -620,7 +620,15 @@ load_model <- all_data %>%
   select(-data)%>%
   mutate(p.value = round(p.value, digits = 5))
 
+## Add your graph
 
+
+### CODE CODE CODE
 ```
+
+\
+\
+
+\
 
 **SC has an inverse relationship with Q. As flows decrease, SC increases because there are still a large mass of ions in the water but the water is now less diluted and thus concentration is higher.**
