@@ -649,7 +649,7 @@ kable(sc_results)
 # Think about if you want a full join, inner join, left join, etc...
 
 # create new column in sal_annual for siteID in order to join:
-sites <- sites %>%
+sites <- sites %>% 
   mutate(siteid_full= paste0('USGS-',site_no))
 
 # joining conc.daily to sites df
