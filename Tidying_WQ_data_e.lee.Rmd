@@ -559,8 +559,6 @@ sc <- readNWISdv(siteNumbers = site_nos,
                  endDate = '2024-03-20') %>%
   renameNWISColumns() %>%
   mutate(sideID = site)
-
-
 ```
 
 ### Summarize the daily data to annual means for lower flow periods (July/Aug/Sept/Oct)
@@ -607,7 +605,6 @@ sens<- function(df){
 model_results <- year_stats %>%
   mutate(model = map(data, sens)) %>%
   unnest(cols = model)
-
 ##Need to figure out how to plot these to see the pattern... 
 ```
 
@@ -618,7 +615,7 @@ model_results <- year_stats %>%
 ## if you want to get p-value across multiple sites, you need to use map
 ```
 
-Answer: \
+Answer:\
 
 ## Q2) 2) What is the correlation between specific conductivity and individual ion concentration?
 
