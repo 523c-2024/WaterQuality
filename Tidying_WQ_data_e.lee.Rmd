@@ -578,7 +578,7 @@ sc_annual_mean <- sc %>%
   group_by(site_no, year) %>%
   # Take the mean, removing NAs and add a count of obs to make sure
   # our summer annual mean represents a good amount of data
-  summarize(summer_sc = mean(SpecCond,na.rm = T),
+  summarize(sc_annual_mean = mean(SpecCond,na.rm = T),
             count = n())
 ```
 
@@ -601,15 +601,7 @@ sens <- function(df){
   tibble(slope = mod$estimates,
          p_value = mod$p.value)
 }
-```
 
-Q2) 2) What is the correlation between specific conductivity and
-individual ion concentration?
-
-### Join `conc.daily` to your specific conductance `sc` data
-
-```{r}
-# Think about if you want a full join, inner join, left join, etc...
 sc_combined <- sc_annual_mean %>%
   group_by(site_no) %>%
   #Bundle the data
@@ -619,65 +611,42 @@ sc_combined <- sc_annual_mean %>%
   # Extract model results
   unnest(cols = mods) %>%
   #remove data
-  select(-data)
+  select(-data) %>%
   #Join back to site names
   #First need to add sites with USGS - in front
   mutate(sites = paste0('USGS-', site_no)) %>%
-  inner_join(focus_sites, by = "site_no")
+  inner_join(focus_sites, by = "sites") %>%
+  inner_join()
 
 kable(sc_combined)
 ```
 
+Q2) 2) What is the correlation between specific conductivity and
+individual ion concentration?
+
+### Join `conc.daily` to your specific conductance `sc` data
+
 ```{r}
-##Matt's code
-
-my_sens <- function(df){
-  mod <- sens.slope(df$summer_sc)
-  
-    #Extract the things we want
-    #if there is a trend (p.value),
-    # what is the slope? 
-  tibble(slope = mod$estimates,
-         p_value = mod$p.value)
-}
-
-
-sc_results <- sc_summers %>%
-  group_by(site_no) %>%
-  #Bundle the data
-  nest() %>%
-  #Apply the model
-  mutate(mods=map(data,my_sens)) %>%
-  # Extract model results
-  unnest(cols = mods) %>%
-  #remove data
-  select(-data) %>%
-  #Join back to site names
-  #First need to add sites with USGS - in front
-  mutate(sites = paste0('USGS-',site_no)) %>%
-  inner_join(focus_sites)
-kable(sc_results)
-
-sc_results <- sc_annual_mean_lowf %>%
-  group_by(site_no) %>%
-  nest() %>%
-  mutate(mods=map(data,sens)) %>%
-  unnest(cols = mods) %>%
-  select(-data) %>%
-  inner_join (focus_sites) 
-
-kable(sc_results)
+sc_ions_combined <- sc %>%
+  ## Add a new siteid column so it matches conc.daily
+  mutate(SiteID = paste0('USGS-',site_no)) %>% 
+  inner_join(focus_sites, by = join_by(SiteID == sites))  %>%
+  #rename the date column
+  rename(date = Date) %>%
+  # join to the conc.daily dataset
+  inner_join(conc.daily)
 ```
 
 ### Plot the correlation with sc on the x axis and individual ions on the y
 
 ```{r}
-ggplot(sc_ionc_combined, aes(x = SpecCond, y = conc)) +
+ggplot(sc_ions_combined, aes(x = SpecCond, y = conc, color = basin)) +
   geom_point() +  # Add points for each data point
-  labs(x = "SpecCond", y = "Concentration", title = "SpecCond vs. Concentration") +
-  theme_minimal() +
+  facet_wrap(~parameter, scales = "free") + 
+  labs(y = "Concentration of Ion (mg/L)", title = "SpecCond vs. Concentration") +
   #free the scales to help with the outlier distortion of plots
-  facet_wrap("parameter", scales = "free_y")
+  scale_x_log10() +
+  scale_y_log10()
 ```
 
 ### Use the `map` and modelling code to test for correlation with `lm`
@@ -687,7 +656,7 @@ specCond.lm.models <- function(x){
   mod <- lm(conc~SpecCond, data=x)
 }
 
-specCond.lm.results <- sc_ionc_combined %>%
+specCond.lm.results <- sc_ions_combined %>%
   group_by(parameter) %>%
   #nesting this allows me to call "data" in the below mutate
   nest() %>%
@@ -707,9 +676,10 @@ conc.models %>%
 ### What Ions are correlated with SC? Why might this be?
 
 Answer: All the ions except bicarbonate are correlated with specific
-conductivity.
-
-**##need to explain this more!**
+conductivity, this is likely because the concentration of calcium,
+chloride, magnesium, potassium, sodium and sulfate all have higher
+concentrations than bicarbonate. The higher a concentration of an ion,
+the more correlation there will be with specific conductivity.
 
 ## Q3) How does discharge control these relationships?
 
@@ -730,16 +700,17 @@ q_code = '00060'
 
 Q <- readNWISdv(siteNumbers = site_nos,
                  parameterCd = q_code,
-                 startDate = '2007-01-01',
-                 endDate = '2024-03-20') %>%
+                 startDate = '2007-02-12',
+                 endDate = '2024-02-15') %>%
   renameNWISColumns() %>%
-  mutate(SiteID = paste0("USGS-", site_no)) %>%
-  select(-c(Flow_cd, site_no, agency_cd)) %>%
-  filter(month(Date) %in% c(7, 8, 9, 10)) %>%
-  mutate(year = year(Date)) %>%
-  #adjusting date column to match other date column titles
-  mutate(date = Date) %>%
-  select(SiteID, date, year, Flow)
+  mutate(month = month(Date),
+         year = year(Date)) %>%
+  #filter to only those summer months
+  filter(month %in% c(7,8,9,10))
+  #group by sites and years to take site and year averages
 
 #create combined dataframe with daily specCond, Q and conc. then see how they relate?
+Q_control <- sc_ions_combined %>%
+  inner_join(Q)
+#Q_control dataframe not working correctly?
 ```
