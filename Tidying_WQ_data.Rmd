@@ -563,7 +563,7 @@ conc_vs_sc_mods <- sc_ions %>%
 
 This section is meant to encourage you to play with the data, you definitely will need to download discharge data at our focus sites, but how you explore this question is up to you. What's the relationship between discharge and SC? Does this relationship alter the relationship between SC and Ions? Does a model with both SC AND discharge predict water quality concentrations better than SC alone? Just try one of these approaches and write out why you think this might be happening.
 
-```{r}
+```{r, warning=FALSE}
 
 # 0007
 #grab daily discharge from USGS sites using dataRetrival package
@@ -601,10 +601,15 @@ ggplot(all_data,aes( x = date, y = daily_load_kg, color = basin))+
 # param daily load vs time ONLY SUMMER/FALL
 ggplot(filter(all_data, month %in% c(7,8,9,10)),aes( x = date, y = daily_load_kg, color = basin))+
   geom_point()+
+  geom_smooth()+
   facet_wrap(~parameter, scales = "free")+
   ylab("Daily Load (kg) for ion")
-
-
+# param daily concentration vs time ONLY SUMMER/FALL
+ggplot(filter(all_data, month %in% c(7,8,9,10)),aes( x = date, y = conc, color = basin))+
+  geom_point()+
+  geom_smooth()+
+  facet_wrap(~parameter, scales = "free")+
+  ylab("Concentration of Ion (mg/L)")
 
 
 load_sc_mod<- function(x){
@@ -612,7 +617,7 @@ load_sc_mod<- function(x){
     tidy()
 }
 
-load_model <- all_data %>%
+load_model_sitewise <- all_data %>%
   group_by(basin, parameter)%>%
   nest() %>%
   mutate(mods=map(data,load_sc_mod))%>%
@@ -620,15 +625,22 @@ load_model <- all_data %>%
   select(-data)%>%
   mutate(p.value = round(p.value, digits = 5))
 
-## Add your graph
+
+load_model <- all_data %>%
+  group_by(parameter)%>%
+  nest() %>%
+  mutate(mods=map(data,load_sc_mod))%>%
+  unnest(cols = mods)%>%
+  select(-data)%>%
+  mutate(p.value = round(p.value, digits = 5))
 
 
-### CODE CODE CODE
+kable(load_model)
 ```
 
-\
-\
+**SC has an inverse relationship with Q. As flows decrease, SC increases because there are still a large mass of ions in the water but the water is now less diluted and thus concentration is higher. In practice, it would probably be best to use some adjusted SC value based on flows to help determine how much mass of ions are in the stream at a given time. \
+**
 
-\
+**I tried to do a quick look at load for each parameter (probably calculating load incorrectly by just doing concentration (mg/L)\* flow (L/day)). It seems that each site has very different amounts of load and results in differing relationships between SC and parameters. Most parameter still had significant relationship with SC but there was not a significant relationship between Cl and SC at the Colorado River Sites.**
 
-**SC has an inverse relationship with Q. As flows decrease, SC increases because there are still a large mass of ions in the water but the water is now less diluted and thus concentration is higher.**
+**In the final two graphs above, there is an interesting difference between concentration values over time vs load over time. It appears like concentrations in the fall have not changed much over the last decade but when they are adjusted to loads it does appear that there is a decrease in loads over time for all parameters across all sites other than Chloride and Sodium.**
