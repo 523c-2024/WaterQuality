@@ -685,10 +685,7 @@ corrs2 %>%
   kable()
 ```
 
-*Discharge is significantly related to concentration for each ion. After
-controlling for specific conductivity, the concentrations of Ca, Ma,
-Sulfate, and HCO3- have negative relationships with discharge.*
-
+*Discharge is significantly related to concentration for each ion. Looking at the graph below, increased flow is related to decreased ion concentrations across the board, likely due to dilution. I'm honestly not sure how to interpret the relationships that become negative after controlling for specific conductivity in the model with both flow and sc.*
 ```{r}
 ggplot(sc_ions, aes(x=Flow, y=conc, color=basin)) + 
   geom_point() + 
@@ -697,7 +694,6 @@ ggplot(sc_ions, aes(x=Flow, y=conc, color=basin)) +
   scale_y_log10() +
   facet_wrap(~parameter, scales='free') + 
   theme_few()
-
 ```
 
 ```{r, echo=F, eval=F}
