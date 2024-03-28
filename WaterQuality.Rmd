@@ -1,0 +1,22 @@
+---
+title: "WaterQuality"
+author: "Tessa Birt"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Mini Chem Lesson
+
+specific conductivity is the measure of anions dissolved (salinity) in water.
+
+-   for salt in freshwater typically between 0-3000
+
+-   50-spring melt
+
+-   1000- medium high for freshwater
+
+-   3000- starting to get problematic
