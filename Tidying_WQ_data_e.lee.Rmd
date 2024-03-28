@@ -624,6 +624,9 @@ kable(sc_combined)
 Q2) 2) What is the correlation between specific conductivity and
 individual ion concentration?
 
+**Answer: With increased ion concentration one can expect an increase in
+specific conductivity.**
+
 ### Join `conc.daily` to your specific conductance `sc` data
 
 ```{r}
@@ -657,13 +660,13 @@ specCond.lm.models <- function(x){
 }
 
 specCond.lm.results <- sc_ions_combined %>%
-  group_by(parameter) %>%
+  group_by(parameter, SiteID) %>%
   #nesting this allows me to call "data" in the below mutate
   nest() %>%
   mutate(mods= map(data, specCond.lm.models))
 
 #investigating individual time series analyses
-conc.models %>%
+specCond.lm.results %>%
   mutate(mod.glance=map(mods,glance)) %>%
   unnest(mod.glance) %>% #Unnesting unwraps the nested column. 
   arrange(desc(adj.r.squared)) %>%
@@ -675,11 +678,13 @@ conc.models %>%
 
 ### What Ions are correlated with SC? Why might this be?
 
-Answer: All the ions except bicarbonate are correlated with specific
-conductivity, this is likely because the concentration of calcium,
-chloride, magnesium, potassium, sodium and sulfate all have higher
-concentrations than bicarbonate. The higher a concentration of an ion,
-the more correlation there will be with specific conductivity.
+Answer: All the ions are correlated with specific conductivity. Since
+specific conductivity measures water's ability to conduct electrical
+current, and increasing dissolved ions increases this ability to conduct
+electrical current. Therefore, with increased ion concentrations you
+will see increased specific conductivity. This relationship varies to a
+certain extent by parameter, since each type of ion has different
+conductive properties.
 
 ## Q3) How does discharge control these relationships?
 
@@ -693,11 +698,11 @@ between SC and Ions? Does a model with both SC AND discharge predict
 water quality concentrations better than SC alone? Just try one of these
 approaches and write out why you think this might be happening.
 
-```{r}
+```{r pretty,fig.width=9,fig.height=7}
 #parameter code for discharge = 00060
-
 q_code = '00060'
 
+#discharge dataframe
 Q <- readNWISdv(siteNumbers = site_nos,
                  parameterCd = q_code,
                  startDate = '2007-02-12',
@@ -705,12 +710,66 @@ Q <- readNWISdv(siteNumbers = site_nos,
   renameNWISColumns() %>%
   mutate(month = month(Date),
          year = year(Date)) %>%
+  mutate(date = Date) %>%
+  select(-Date) %>%
   #filter to only those summer months
   filter(month %in% c(7,8,9,10))
   #group by sites and years to take site and year averages
 
-#create combined dataframe with daily specCond, Q and conc. then see how they relate?
-Q_control <- sc_ions_combined %>%
-  inner_join(Q)
-#Q_control dataframe not working correctly?
+#create dataframe with Q + SpecCond
+Q_sc <- sc %>%
+  filter(Date >= '2007-02-12', Date <= '2024-02-15') %>%
+  mutate(date = Date) %>%
+  select(-Date) %>%
+  inner_join(Q) %>%
+  select(site_no, date, SpecCond, Flow)
+
+#exploring relationship between Q, sc and ion conc.
+##creating a dataframe that combines Q, sc and ion conc
+Q_sc_ion <- Q_sc %>%
+  mutate(SiteID = paste0('USGS-',site_no)) %>%
+  inner_join(conc.daily) %>%
+  inner_join(focus_sites, by = join_by(SiteID == sites))
+
+#visual inspection of relationships between Q, sc and ion conc
+ggplot(data = Q_sc_ion) +
+  geom_point(aes(x = Flow, y = SpecCond, color = basin)) +
+  facet_wrap(~parameter, scales = "free") +
+  labs(x = "Discharge (cfs)", y = "Specific Conductivity (µS/cm)") +
+  theme_few() +
+  ggtitle("Relationship between Discharge and Specific Conductivity")
 ```
+
+```{r}
+#modeling relationships
+flow.lm.models <- function(x){
+  mod <- lm(Flow~SpecCond, data=x)
+}
+
+flow.lm.results <- Q_sc_ion %>%
+  group_by(parameter, SiteID) %>%
+  #nesting this allows me to call "data" in the below mutate
+  nest() %>%
+  mutate(mods = map(data, flow.lm.models))
+
+#investigating individual time series analyses
+flow.lm.results %>%
+  mutate(mod.glance=map(mods,glance)) %>%
+  unnest(mod.glance) %>% #Unnesting unwraps the nested column. 
+  arrange(desc(adj.r.squared)) %>%
+  select(parameter,SiteID,adj.r.squared,p.value,logLik,AIC) %>%
+  kable(.,'html') %>%
+  kable_styling() %>%
+  scroll_box(width='600px',height='500px')
+```
+
+Answer: the model results show that there is a significant relationship
+between specific conductivity and flow at all sites except dolores
+(USGS-09180000). The dolores location has lower flow than all the other
+all the other sites, likely because it is the farthest down stream
+gauge. With decreased flow, one can expect decreased ion concentrations
+because there is less water available to dissolve and transport ions
+from the surrounding environment. When flow decreases and ion
+concentrations decrease, one would expect specific conductivity to also
+decrease, assuming other factors remain constant, since a decrease in
+ion concentration leads to a decrease in specific conductivity.\
