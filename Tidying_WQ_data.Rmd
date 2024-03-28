@@ -745,9 +745,11 @@ WQ.models %>%
 
 ### What Ions are correlated with SC? Why might this be?
 
-
+All of the ions show correlation with SC at one or more of the sites, but sodium, sulfate, and Chloride have the highest adj.r.squared values. These are all salts so in higher concentrations they will have a direct effect on SC.
 
 ## Q3) How does discharge control these relationships?
+
+Dishcharge controls these relationships by dilution. In high flow periods SC is likely to be lower than in low flow periods.
 
 ### Free play.
 
