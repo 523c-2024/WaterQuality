@@ -35,6 +35,7 @@ library(lubridate) #Makes working with dates easier
 library(ggthemes) #Makes plots prettier
 library(tidyr) #Makes multiple simultaneous models easier
 library(trend)
+library(ggplot2)
 
 
 ```
@@ -471,7 +472,7 @@ nwis_data <- readNWISdv(siteNumbers = siteNumbers,
                         startDate = startDate,
                         endDate = endDate) %>% 
   renameNWISColumns() %>% 
-  mutate(SiteID=paste0("USGS-",site_no))
+  mutate(site_no=paste0("USGS-",site_no))
 
 
 
@@ -487,19 +488,21 @@ nwis_data <- readNWISdv(siteNumbers = siteNumbers,
 Salinity is primarily an issue during low flow periods so when we are looking for trends we want to focus on the saltiest times of year, generally July-Oct.
 
 ```{r}
+
+#Group_by, filter, and summarize will be key here. 
+
 nwis_filtered<-nwis_data %>% 
   mutate(year=year(.$Date),
     month=month(.$Date)) %>% 
   filter(month=="7" | month=="8" | month=="9" | month=="10") %>% 
-  select(date=Date,SiteID, year, SpecCond,month)
+  select(date=Date,site_no, year, SpecCond,month)
   
 
 year_stats<-nwis_filtered %>% 
-  group_by(SiteID, year) %>% 
-  summarise(mean=mean(SpecCond, na.rm = TRUE),
+  group_by(site_no, year) %>% 
+  summarise(mean=mean(SpecCond),
             n=n())%>%
   nest()
-#Group_by, filter, and summarize will be key here. 
 
 ```
 
@@ -525,10 +528,19 @@ model_results <- year_stats%>%
   #remove data
   select(-data)
 
+q1_results<- focus_sites %>% 
+  select(site_no=sites,basin) %>% 
+  left_join(model_results, ., by="site_no") %>% 
+  kable(.,'html') %>%
+  kable_styling() %>%
+  scroll_box(width='600px',height='200px')
 
+q1_results
 ```
 
-\
+## Q1) Answer
+
+#### The results of the sens slope show that when analyzing the sites the p values are not significant except for site_no USGS-09180000 which confirms the basins concerns that salinity is a problem down stream and that in the dolores river the salinity has increased during the period of observation. Whether overall salinity change is mostly driven through the dolores river would require further analysis as below where the gunnison and dolores meet there was no statistically significant correlation. 
 
 ## Q2) 2) What is the correlation between specific conductivity and individual ion concentration?
 
@@ -540,10 +552,13 @@ model_results <- year_stats%>%
 nwis_prep<-nwis_data %>% 
   mutate(year=year(.$Date),
     month=month(.$Date)) %>% 
-  select(date=Date,SiteID, year, SpecCond,month)
+  select(date=Date,site_no, year, SpecCond,month)
 
 
-joined_data<-inner_join(nwis_prep,conc.daily, by=c("SiteID", "date"))
+joined_data<-conc.daily %>% 
+  mutate(site_no = SiteID) %>% 
+  select(-SiteID) %>% 
+  inner_join(nwis_prep,., by=c("site_no", "date"))
 
 ```
 
@@ -552,7 +567,7 @@ joined_data<-inner_join(nwis_prep,conc.daily, by=c("SiteID", "date"))
 ```{r}
 
 ggplot(joined_data)+
-  geom_point(aes(x=SpecCond, y=conc, color=SiteID))+
+  geom_point(aes(x=SpecCond, y=conc, color=site_no))+
   facet_wrap(facet="parameter", scales = "free")+
   scale_x_log10()+
   scale_y_log10()+
@@ -564,30 +579,34 @@ ggplot(joined_data)+
 
 ```{r}
 
-joined_nest<-joined_data %>% 
-  group_by(parameter) %>% 
-  nest()
-
-
-lm_map <- function(df){
-  model <- lm(formula= SpecCond~conc,
-              data = joined_data ) %>% 
-    tidy()
+# Function to run lm on each subset of data
+lm_map <- function(df, parameter){
+  lm(formula = SpecCond ~ conc, data = df) %>% 
+    tidy() 
 }
 
-lm_results <- joined_nest%>%
-  mutate(model = map(data, lm_map))%>%
-  unnest(cols = model)
+# Applying lm_map function to each subset of data for each parameter
+lm_results <- joined_data %>%
+  group_by(parameter) %>%
+  nest() %>%
+  mutate(model = map2(data, parameter, lm_map)) %>%
+  select(-data) %>% 
+  unnest(cols = c(model)) %>% 
+  kable(.,'html') %>%
+  kable_styling() %>%
+  scroll_box(width='600px',height='1000px')
+
+lm_results
 
 ```
 
+## Q2) Answer
+
 ### What Ions are correlated with SC? Why might this be?
 
-#### All of the ions are correlated heavily with Specific Conductivity because they all make up Specific Conductivity as a whole. 
+#### All of the ions are correlated heavily with Specific Conductivity because they all make up Specific Conductivity as a whole. This makes sense, although we also see that when testing each variables concentration (conc) independently against specific conductivity that some variables in particulare are more correlated, like Magnesium, Pottasium, and Calcium. It is less so correlated with things like Bicarbonate which makes sense because I would expect that to mostly come from weathering which would increase with more agriculture as water is applied return flows would weather more but at only a slight change compared to what is being put down.
 
 ## Q3) How does discharge control these relationships?
-
-
 
 ### Free play.
 
@@ -602,30 +621,64 @@ q_data <- readNWISdv(siteNumbers = siteNumbers,
                         startDate = startDate,
                         endDate = endDate) %>% 
   renameNWISColumns() %>% 
-  mutate(SiteID=paste0("USGS-",site_no))%>% 
+  mutate(site_no=paste0("USGS-",site_no))%>% 
   mutate(year=year(.$Date),
     month=month(.$Date),
     Q_ls=Flow*28.315) %>% 
-  select(date=Date,SiteID, Q_ls)
+  select(date=Date,site_no, Q_ls)
 
-q_joined<-inner_join(joined_data,q_data, by=c("SiteID","date"))
+q_joined<-inner_join(joined_data,q_data, by=c("site_no","date"))
 
 ```
 
 ```{r}
-qnest<-q_joined %>% 
+qnest <- q_joined %>% 
   group_by(parameter) %>% 
   nest()
 
-
-lm_map <- function(df){
-  model <- lm(formula= SpecCond~conc*Q_ls,
-              data = q_joined )%>%
-    tidy()
+# Function to fit linear models
+lm_map <- function(df) {
+  model <- lm(SpecCond ~ conc * Q_ls, data = df) %>% tidy()
 }
 
-lm_results <- qnest%>%
-  mutate(model = map(data, lm_map))%>%
-  unnest(cols = model)
+# Apply lm_map function to each nested data frame
+q_lm_results <- qnest %>%
+  mutate(model = map(data, lm_map)) %>%
+  unnest(cols = c(model)) %>% 
+  select(-data)%>% 
+  kable(.,'html') %>%
+  kable_styling() %>%
+  scroll_box(width='600px',height='1000px')
+
+q_lm_results
 ```
+
+## Q3) Answer
+
+#### Once we introduce discharge (Q) the ion concentrations begin to change. For example in Bicarbonate Q is not significant meaning that bicarbonate is not really changing with respect to discharge in the basin overall. However things like Calcium, Magnesium, Pottasium, Sodium, and Sulfate, are all correlated with the amount of discharge that occurs. 
+
+```{r}
+q_site_nest <- q_joined %>% 
+  group_by(parameter,site_no) %>% 
+  nest()
+
+# Function to fit linear models
+lm_map <- function(df) {
+  lm(SpecCond ~ conc * Q_ls, data = df, na.action = na.omit) %>% tidy()
+}
+
+# Apply lm_map function to each nested data frame
+q_site_lm_results <- q_site_nest %>%
+  mutate(model = map(data, lm_map)) %>%
+  unnest(cols = c(model)) %>% 
+  select(-data)%>% 
+  filter(term == "conc:Q_ls") %>% 
+  kable(., 'html') %>%
+  kable_styling() %>%
+  scroll_box(width='600px', height='1000px')
+
+q_site_lm_results 
+```
+
+#### To test whether ion concentration matters at an individual site we need to test the interaction of each ion and Q at each site, once we do that we see that ion concentration at each site varies for example sodium now has a significant correlation beteen ion and Q at site USGS-09180500. In cases where the ion concentration is negative is negative the ion is being diluted which is the case with most of the negative estimates. 
 
